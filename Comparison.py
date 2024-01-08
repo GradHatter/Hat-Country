@@ -1,9 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Sep 24 02:39:43 2020
-
-@author: jkora
-"""
 import plotly.express as px
 import pandas as pd
 import numpy as np
@@ -11,6 +5,14 @@ from numpy import pi,sin, cos, sqrt, arctan2
 
 from plotly.offline import plot
 import plotly.graph_objects as go
+
+from shapely import Polygon
+import shapely.geometry as sg
+import shapely.ops as so
+
+import geopandas as gpd
+
+import matplotlib.pyplot as plt
 
 filename = "file.txt"
 #read in file of all countries' data
@@ -165,14 +167,9 @@ def multipoly_area(x,y):
 
 #find area of the hat
 hat_area = PolyArea(hat['x'],hat['y'])
-print(f"Hat area = {hat_area}")
 
 #find the area of the country
 c_area = multipoly_area(df['x'],df['y'])
-print(f"Country area = {c_area}")
-
-#df = center_shape(df)
-#hat = center_shape(hat)
 
 #normalize hat area to 1
 hat['x_norm'] = hat['x']*np.sqrt(1/(hat_area))
@@ -208,4 +205,39 @@ fig.update_yaxes(range = [-.75,.75])
 #                    color_discrete_sequence=px.colors.sequential.Plasma_r,
 #                    template="plotly_dark",)
 
+#plot(fig)
+
+#----------------------------------------------------------------------------
+
+#make list of tuples from dataframe
+column1 = 'x_cent'
+column2 = 'y_cent'
+hat_list = list(zip(hat[column1], hat[column2]))
+country_poly_list = []
+
+listna = df[df[column1].isnull()].index.to_list()
+for i in range(len(listna)):
+        if i==0:
+            country_poly_list.append(Polygon(df[[column1,column2]][:listna[i]]))
+        else:
+            country_poly_list.append(Polygon(df[[column1,column2]][listna[i-1]+1:listna[i]]))
+
+
+hat_polygon = Polygon(hat[[column1,column2]])
+
+hat_polygon = hat_polygon.difference(country_poly_list[1])
+
+#hat_polygon.plot()
+#plt.show()
+
+fig = go.Figure()
+
+for geom in list(hat_polygon.geoms):
+    ys, xs = geom.exterior.xy
+
+    fig.add_trace(go.Scatter(x = np.array(xs), y = np.array(ys), 
+                            fill = 'toself'))
+
+fig.add_trace(go.Scatter(x = hat['y_cent'], y = hat['x_cent'],
+                            fill = 'toself'))
 plot(fig)
