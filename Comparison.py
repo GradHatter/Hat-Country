@@ -6,9 +6,10 @@ from numpy import pi,sin, cos, sqrt, arctan2
 from plotly.offline import plot
 import plotly.graph_objects as go
 
-from shapely import Polygon
+from shapely import MultiPolygon, Polygon, affinity, wkt,wkb
 import shapely.geometry as sg
 import shapely.ops as so
+
 
 import geopandas as gpd
 
@@ -225,19 +226,76 @@ for i in range(len(listna)):
 
 hat_polygon = Polygon(hat[[column1,column2]])
 
-hat_polygon = hat_polygon.difference(country_poly_list[1])
+hat_polygon = affinity.rotate(hat_polygon, 90) #rotate polygon
 
+
+#hat_polygon = hat_polygon.difference(country_poly_list[5])
+#hat_polygon = hat_polygon.difference(country_poly_list[3])
+#hat_polygon = hat_polygon.difference(country_poly_list[-1])
+hat_polygon = Polygon(hat_polygon.exterior.coords, [country_poly_list[-10].exterior.coords])
+#hat_polygon = hat_polygon.difference(country_poly_list[1])
+print(hat_polygon.area)
 #hat_polygon.plot()
 #plt.show()
-
+'''
 fig = go.Figure()
 
+#Check if the object is a polygon or Multipolygon
+if hat_polygon.geom_type == 'MultiPolygon':
+    print('Multipolygon')
+    for geom in list(hat_polygon.geoms):
+        ys, xs = geom.exterior.xy
+
+        fig.add_trace(go.Scatter(x = np.array(xs), y = np.array(ys), 
+                                fill = 'toself'))
+elif hat_polygon.geom_type == 'Polygon':
+    print('Polygon')
+    ys, xs = hat_polygon.exterior.xy
+
+    fig.add_trace(go.Scatter(x = np.array(xs), y = np.array(ys), 
+                                fill = 'toself'))
+else:
+    raise IOError('Shape is not a polygon.')
+'''
+'''
 for geom in list(hat_polygon.geoms):
     ys, xs = geom.exterior.xy
 
     fig.add_trace(go.Scatter(x = np.array(xs), y = np.array(ys), 
                             fill = 'toself'))
-
-fig.add_trace(go.Scatter(x = hat['y_cent'], y = hat['x_cent'],
+'''
+'''
+#fig.add_trace(go.Scatter(x = hat['y_cent'], y = hat['x_cent'],
+#                            fill = 'toself'))
+fig.add_trace(go.Scatter(x = df['y_cent'], y = df['x_cent'],
                             fill = 'toself'))
+
+y1s, x1s = country_poly_list[-10].exterior.xy
+
+fig.add_trace(go.Scatter(x = np.array(x1s), y = np.array(y1s), 
+                                fill = 'toself'))
 plot(fig)
+'''
+
+c = world['geometry'].apply(wkt.loads)#.values[0]
+c = world[(world.name == country)]['geometry'].item()
+c = wkt.loads(c)
+
+blobs = []
+
+for i in range(len(c.geoms)):
+    x,y = c.geoms[i].exterior.xy
+    x = np.array(x)
+    x_corr = np.where(x < 0, x+360, x)
+    y_corr = np.array(y)
+    blobs.append(Polygon(list(zip(x_corr, y_corr))))
+
+country_blob = MultiPolygon(blobs)
+
+fig, axs = plt.subplots()
+
+for geom in country_blob.geoms:    
+    x2s, y2s = geom.exterior.xy    
+    axs.fill(x2s, y2s)
+
+plt.show()
