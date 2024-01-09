@@ -226,15 +226,14 @@ for i in range(len(listna)):
 
 hat_polygon = Polygon(hat[[column1,column2]])
 
-hat_polygon = affinity.rotate(hat_polygon, 90) #rotate polygon
+
 
 
 #hat_polygon = hat_polygon.difference(country_poly_list[5])
 #hat_polygon = hat_polygon.difference(country_poly_list[3])
 #hat_polygon = hat_polygon.difference(country_poly_list[-1])
-hat_polygon = Polygon(hat_polygon.exterior.coords, [country_poly_list[-10].exterior.coords])
+#hat_polygon = Polygon(hat_polygon.exterior.coords, [country_poly_list[-10].exterior.coords])
 #hat_polygon = hat_polygon.difference(country_poly_list[1])
-print(hat_polygon.area)
 #hat_polygon.plot()
 #plt.show()
 '''
@@ -276,26 +275,154 @@ fig.add_trace(go.Scatter(x = np.array(x1s), y = np.array(y1s),
                                 fill = 'toself'))
 plot(fig)
 '''
-
+country = "Canada"
 c = world['geometry'].apply(wkt.loads)#.values[0]
 c = world[(world.name == country)]['geometry'].item()
 c = wkt.loads(c)
 
+c_area = c.area
+
 blobs = []
+if c.geom_type == 'MultiPolygon':
+    for i in range(len(c.geoms)):
+        x,y = c.geoms[i].exterior.xy
+        x_corr = np.array(x)
+        y_corr = np.array(y)
+        if country == "Russia":
+            x_corr = np.where(x_corr < 0, x_corr+360, x_corr)
+        
+        cx_norm = x_corr*np.sqrt(1/(c_area))
+        cy_norm = y_corr*np.sqrt(1/(c_area))
 
-for i in range(len(c.geoms)):
-    x,y = c.geoms[i].exterior.xy
-    x = np.array(x)
-    x_corr = np.where(x < 0, x+360, x)
+        blobs.append(Polygon(list(zip(cx_norm, cy_norm))))
+
+    country_norm = MultiPolygon(blobs)
+
+    cent = np.array(country_norm.centroid.coords)[0]
+
+    blobs = []
+
+    for i in range(len(country_norm.geoms)):
+        x,y = country_norm.geoms[i].exterior.xy
+        x = np.array(x)
+        y = np.array(y)
+
+        cx_cent = x - cent[0]
+        cy_cent = y - cent[1]
+
+        blobs.append(Polygon(list(zip(cx_cent, cy_cent))))
+
+    country_blob = MultiPolygon(blobs)
+
+elif c.geom_type == 'Polygon':
+    x,y = c.exterior.xy
+    x_corr = np.array(x)
     y_corr = np.array(y)
-    blobs.append(Polygon(list(zip(x_corr, y_corr))))
+        
+    cx_norm = x_corr*np.sqrt(1/(c_area))
+    cy_norm = y_corr*np.sqrt(1/(c_area))
 
-country_blob = MultiPolygon(blobs)
+    country_norm = Polygon(list(zip(cx_norm, cy_norm)))
 
-fig, axs = plt.subplots()
+    cent = np.array(country_norm.centroid.coords)[0]
 
-for geom in country_blob.geoms:    
-    x2s, y2s = geom.exterior.xy    
-    axs.fill(x2s, y2s)
+    x,y = country_norm.exterior.xy
+    x = np.array(x)
+    y = np.array(y)
 
-plt.show()
+    cx_cent = x - cent[0]
+    cy_cent = y - cent[1]
+
+    country_blob = Polygon(list(zip(cx_cent, cy_cent)))
+
+#print(cent)
+
+hat_polygon = affinity.rotate(hat_polygon, 90) #rotate polygon
+#country_blob = affinity.rotate(country_blob, 90) #rotate polygon
+print(hat_polygon.area)
+
+holes = []
+
+for sub_shape in country_blob.geoms:
+    if hat_polygon.contains_properly(sub_shape):
+            holes.append(sub_shape)
+            
+        
+
+#print(hat_polygon.contains_properly(country_blob.geoms[6]))
+hat_polygon = hat_polygon.difference(country_blob)
+
+hat_polys = list(hat_polygon.geoms)
+
+'''
+for hole in holes:
+    for i in range(len(hat_polys)):
+        try:
+            hat_polys[i] = Polygon(hat_polys[i].exterior.coords, [hole.exterior.coords])
+            print(0)
+        except:
+            print(1)
+
+        #if hat_polys[i].contains_properly(hole):
+        #    hat_polys = Polygon(hat_polys.exterior.coords, [hole.exterior.coords])
+'''
+#hat_polys[1] = Polygon(hat_polys[1].exterior.coords, [holes[1].exterior.coords])
+hat_polygon = MultiPolygon(hat_polys)
+
+
+#hat_polygon = hat_polygon.difference(country_blob.geoms[-10].exterior.coords)
+#hat_polygon = hat_polygon.difference(country_blob.geoms[-10].exterior.coords)
+#hat_polygon = Polygon(hat_polygon.exterior.coords, [country_blob.geoms[1].exterior.coords])
+#hat_polygon = hat_polygon.difference(country_blob.geoms[-10].exterior.coords])
+print(hat_polygon.area, country_blob.area)
+
+fig = go.Figure()
+
+#Check if the object is a polygon or Multipolygon
+if country_blob.geom_type == 'MultiPolygon':
+    print('Multipolygon')
+    for geom in list(country_blob.geoms):
+        xs, ys = geom.exterior.xy
+
+        fig.add_trace(go.Scatter(x = np.array(xs), y = np.array(ys), 
+                                fill = 'toself'))
+elif country_blob.geom_type == 'Polygon':
+    print('Polygon')
+    xs, ys = country_blob.exterior.xy
+
+    fig.add_trace(go.Scatter(x = np.array(xs), y = np.array(ys), 
+                                fill = 'toself'))
+else:
+    raise IOError('Shape is not a polygon.')
+
+if hat_polygon.geom_type == 'MultiPolygon':
+    print('Multipolygon')
+    for geom in list(hat_polygon.geoms):
+        xs, ys = geom.exterior.xy
+
+        fig.add_trace(go.Scatter(x = np.array(xs), y = np.array(ys), 
+                                fill = 'toself', fillcolor='orange',
+                                line = {'color' : 'orange'}, name = 'hat'))
+elif hat_polygon.geom_type == 'Polygon':
+    print('Polygon')
+    xs, ys = hat_polygon.exterior.xy
+
+    fig.add_trace(go.Scatter(x = np.array(xs), y = np.array(ys), 
+                                fill = 'toself'))
+else:
+    raise IOError('Shape is not a polygon.')
+
+#fig.add_trace(go.Scatter(x = hat['y_cent'], y = hat['x_cent'],
+#                            fill = 'toself'))
+#fig.add_trace(go.Scatter(x = df['y_cent'], y = df['x_cent'],
+#                            fill = 'toself'))
+
+x1s, y1s = country_blob.geoms[6].exterior.xy
+
+fig.add_trace(go.Scatter(x = np.array(x1s), y = np.array(y1s), 
+                                fill = 'toself'))
+
+fig.update_xaxes(range = [-2,2])
+fig.update_yaxes(range = [-.75,.75])
+
+plot(fig)
