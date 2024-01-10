@@ -49,20 +49,12 @@ hat_list = list(zip(hat[column1], hat[column2]))
 hat_polygon = Polygon(hat[[column1,column2]])
 
 #rotate hat    
-hat_polygon = affinity.rotate(hat_polygon, 70) #Canada
+#hat_polygon = affinity.rotate(hat_polygon, 70) #Canada
 #hat_polygon = affinity.rotate(hat_polygon, 75) #Russia
 #hat_polygon = affinity.rotate(hat_polygon, 120) #Mexico
 
 #flip Polygon
 #hat_polygon = transform(lambda x, y, z=None: (x, -y), hat_polygon) #Mexico
-
-#----------------------------------------------------------------------------
-
-#select a country
-#country = "United States of America"
-#country = "Russia"
-#country = "Canada"
-country = "Mexico"
 
 #--------------------------------------------------------------------------------
 def norm_cent_poly(poly, country = None):
@@ -190,47 +182,73 @@ def plot_poly(poly, shape = "exterior", color = 'green', name = None):
 world['Similarity Score'] = 0
 world['Subtracted Hat Poly'] = 0
 world['Norm Cent Country'] = 0
+world['Rotation'] = 0
+world['Flip'] = 0
 
 similarity_dict = {}
 country_list = world['name'].tolist()
+#hat_polygon = transform(lambda x, y, z=None: (x, -y), hat_polygon)
 
 for country in country_list:
     c = world[(world.name == country)]['geometry'].item()
     c = wkt.loads(c)
     country_poly = norm_cent_poly(c, country == country)
+    #rotate the hat every 10 degrees and check overlap
+    best = [0,0,0,0] #[unique_hat_poly, similarity_score, i*10, flip]
+    for i in range(0,360,5):
+        hat_polygon = affinity.rotate(hat_polygon, i)
+        for flip in [True,False]:
+            if flip is True:
+                hat_polygon = transform(lambda x, y, z=None: (x, -y), hat_polygon)
+            elif flip is False:
+                pass
+            else:
+                print("error, flip neither True or False")
 
-    unique_hat_poly, similarity_score = find_similarity_score(hat_polygon,
-                                                            country_poly,
-                                                            show = False)
+        unique_hat_poly, similarity_score = find_similarity_score(hat_polygon,
+                                                                country_poly,
+                                                                show = False)
+        
+        if similarity_score > best[1]:
+            best = [unique_hat_poly, similarity_score, i, flip]
+        else:
+            pass
     
     world.loc[(world.name == country),
-                'Similarity Score'] = similarity_score
-    world.loc[(world.name == country),
-                'Subtracted Hat Poly'] = unique_hat_poly
-    world.loc[(world.name == country),
                 'Norm Cent Country'] = country_poly
+    world.loc[(world.name == country),
+                'Subtracted Hat Poly'] = best[0] #unique_hat_poly
+    world.loc[(world.name == country),
+                'Similarity Score'] = best[1] #similarity_score
+    world.loc[(world.name == country),
+                'Rotation'] = best[2] #hat rotation
+    world.loc[(world.name == country),
+                'Flip'] = best[3] #was the hat flipped
 
 #unique_hat_poly, similarity_score = find_similarity_score(hat_polygon, country_poly)
 
 print(world.loc[world['Similarity Score'].idxmax()])
 
-fig = go.Figure().update_layout(plot_bgcolor='white')
 country = world.loc[world['Similarity Score'].idxmax(), 'name']
 
 #unique_hat_poly = wkt.loads(world[(world.name == country)]['Subtracted Hat Poly'].item())
 unique_hat_poly = world[(world.name == country)]['Subtracted Hat Poly'].item()
 country_poly = world[(world.name == country)]['Norm Cent Country'].item()
 
+world.to_csv("world_similarity.csv")
+
+#-----------------------------------------------------------------------------
+
+fig = go.Figure().update_layout(plot_bgcolor='white')
+
 plot_poly(unique_hat_poly, shape = 'exterior', color = 'orange', name = "Hat")
-plot_poly(country_poly, color = 'black', name = country)
-'''
 try:
     plot_poly(unique_hat_poly, shape = 'interior', color = 'white', name = None)
 except:
     print("No interior polygons")
-'''
+plot_poly(country_poly, color = 'black', name = country)
 
-fig.update_xaxes(range = [-2,2])
-fig.update_yaxes(range = [-1,1])
+fig.update_xaxes(range = [-2.5,2.5])
+fig.update_yaxes(range = [-1.25,1.25])
 
 plot(fig)
