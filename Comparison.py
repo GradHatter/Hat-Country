@@ -6,7 +6,8 @@ from numpy import pi,sin, cos, sqrt, arctan2
 from plotly.offline import plot
 import plotly.graph_objects as go
 
-from shapely import MultiPolygon, Polygon, affinity, wkt
+from shapely import MultiPolygon, Polygon, wkt
+from shapely.affinity import translate, rotate
 from shapely.ops import transform
 import shapely.geometry as sg
 import shapely.ops as so
@@ -134,6 +135,7 @@ def norm_cent_poly(poly, country = None):
 def find_similarity_score(hat_polygon, country_poly, show = False):
 
     unique_hat_poly = hat_polygon.difference(country_poly)
+    unique_country_poly = country_poly.difference(hat_polygon)
 
     #total hat area-remaining hat area = % overlap
     similarity_score = 100*(1-unique_hat_poly.area)
@@ -146,7 +148,7 @@ def find_similarity_score(hat_polygon, country_poly, show = False):
     elif show is False:
         pass
     
-    return unique_hat_poly, similarity_score
+    return similarity_score, unique_hat_poly, unique_country_poly
 
 #-------------------------------------------------------------------------
 
@@ -192,6 +194,23 @@ def plot_poly(poly, shape = "exterior", color = 'green', name = None):
             print("Please define exterior or interior")
     else:
         raise IOError('Shape is not a shapely polygon or multipolygon.')
+
+#--------------------------------------------------------------------------------    
+
+def move_hat(hat_poly,unique_country_poly):
+    excess_country = hat_poly.buffer(buffer).intersection(unique_country_poly)
+    if excess_country.area > 0:
+        perc_adjust = excess_country.area/buffer_area
+        new_cent = tuple([x*perc_adjust for x in excess_country.centroid.coords[0]])
+    else:
+        new_cent = (0,0)
+
+
+    moved_hat = translate(hat_polygon,
+                            xoff = new_cent[0],
+                            yoff = new_cent[1])
+    
+    return moved_hat
     
 #--------------------------------------------------------------------------------
 
@@ -201,9 +220,13 @@ world['Subtracted Hat Poly'] = 0
 world['Norm Cent Country'] = 0
 world['Rotation'] = 0
 world['Flip'] = 0
+world['Hat X Center'] = 0
+world['Hat Y Center'] = 0
 
 similarity_dict = {}
 country_list = world['name'].tolist()
+buffer = .1
+buffer_area = hat_polygon.buffer(buffer).area-hat_polygon.area
 
 for country in country_list:
     #get country geometry then normalize and center
@@ -213,35 +236,66 @@ for country in country_list:
 
     #rotate the hat every 5 degrees and check overlap
     #keep track of conditions resulting in the highest overlap percentage
-    best = [0,0,0,0] #[unique_hat_poly, similarity_score, i*10, flip]
+    best = [0,0,0,0,(0,0)] #[unique_hat_poly, similarity_score, i*10, flip]
     #rotate the hat every 5 degrees and check overlap
     for i in range(0,360,5):
-        hat_polygon = affinity.rotate(hat_polygon, i)
+        hat_polygon = rotate(hat_polygon, i)
         #flip the hat along the y axis and check again for overlap
         for flip in [True,False]:
             if flip is True:
                 hat_polygon = transform(lambda x, y, z=None: (x, -y), hat_polygon)
 
                 #get non-overlapping hat polygon and similarity percentage as decimal
-                unique_hat_poly, similarity_score = find_similarity_score(hat_polygon,
+                similarity_score, unique_hat_poly, unique_country_poly = find_similarity_score(hat_polygon,
+                                                                        country_poly,
+                                                                        show = False)
+
+                #if current conditions are better than the previous best, update best
+                
+                if similarity_score > best[1]:
+                    best = [unique_hat_poly,
+                            similarity_score,
+                            i, flip]+[hat_polygon.centroid.coords[0]]
+                else:
+                    pass
+
+                moved_hat = move_hat(hat_polygon,unique_country_poly)
+                
+                similarity_score, unique_hat_poly, unique_country_poly = find_similarity_score(moved_hat,
                                                                         country_poly,
                                                                         show = False)
                 
-                #if current conditions are better than the previous best, update best
                 if similarity_score > best[1]:
-                    best = [unique_hat_poly, similarity_score, i, flip]
+                    best = [unique_hat_poly,
+                            similarity_score,
+                            i, flip]+[moved_hat.centroid.coords[0]]
                 else:
                     pass
 
             elif flip is False:
                 #get non-overlapping hat polygon and similarity percentage as decimal
-                unique_hat_poly, similarity_score = find_similarity_score(hat_polygon,
+                similarity_score, unique_hat_poly, unique_country_poly = find_similarity_score(hat_polygon,
                                                                         country_poly,
                                                                         show = False)
                 
                 #if current conditions are better than the previous best, update best
                 if similarity_score > best[1]:
-                    best = [unique_hat_poly, similarity_score, i, flip]
+                    best = [unique_hat_poly,
+                            similarity_score,
+                            i, flip]+[hat_polygon.centroid.coords[0]]
+                else:
+                    pass
+
+                moved_hat = move_hat(hat_polygon,unique_country_poly)
+                
+                similarity_score, unique_hat_poly, unique_country_poly = find_similarity_score(moved_hat,
+                                                                        country_poly,
+                                                                        show = False)
+                
+                if similarity_score > best[1]:
+                    best = [unique_hat_poly,
+                            similarity_score,
+                            i, flip]+[moved_hat.centroid.coords[0]]
                 else:
                     pass
 
@@ -256,8 +310,15 @@ for country in country_list:
                 'Rotation'] = best[2] #hat rotation
     world.loc[(world.name == country),
                 'Flip'] = best[3] #was the hat flipped
+    world.loc[(world.name == country),
+                'Hat X Center'] = best[4][0] #new hat center
+    world.loc[(world.name == country),
+                'Hat Y Center'] = best[4][1] #new hat center
+    
+    print(country, best[1])
+    
 
-#unique_hat_poly, similarity_score = find_similarity_score(hat_polygon, country_poly)
+#similarity_score, unique_hat_poly, unique_country_poly = find_similarity_score(hat_polygon, country_poly)
 
 max_overlap = world.loc[world['Similarity Score'].idxmax()]
 min_overlap = world.loc[world['Similarity Score'].idxmin()]
@@ -272,7 +333,7 @@ country = max_overlap['name']
 unique_hat_poly = world[(world.name == country)]['Subtracted Hat Poly'].item()
 country_poly = world[(world.name == country)]['Norm Cent Country'].item()
 
-world.to_csv("world_similarity.csv")
+world.to_csv("world_similarity.csv", sep = "\t")
 
 #-----------------------------------------------------------------------------
 #plot the country and the non-overlapping portions of the hat
@@ -284,6 +345,14 @@ try:
 except:
     print("No interior polygons")
 plot_poly(country_poly, color = 'black', name = country)
+'''
+new_hat = rotate(hat_polygon, world[(world.name == country)]['Rotation'].item())
+if world[(world.name == country)]['Rotation'].item() is True:
+    new_hat = transform(lambda x, y, z=None: (x, -y), new_hat)
+else:
+    pass
+plot_poly(new_hat, color = 'green', name = 'Unmoved_hat')
+'''
 
 fig.update_xaxes(range = [-2.5,2.5])
 fig.update_yaxes(range = [-1.25,1.25])
